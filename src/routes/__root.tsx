@@ -8,50 +8,24 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { title: "Continuum — Build lasting habits" },
-      { name: "description", content: "A calm, focused habit tracker. Track streaks, visualize progress, and build your daily ritual." },
-      { name: "author", content: "Continuum" },
-      { property: "og:title", content: "Continuum — Build lasting habits" },
-      { property: "og:description", content: "A calm, focused habit tracker. Track streaks, visualize progress, and build your daily ritual." },
+      { title: "OSHUDEV — Study together, focus deeper" },
+      { name: "description", content: "A premium co-op study platform for DEV & OSHU. Live timers, synced focus mode, daily 8H goals, and shared streaks." },
+      { name: "author", content: "OSHUDEV" },
+      { property: "og:title", content: "OSHUDEV — Study together, focus deeper" },
+      { property: "og:description", content: "Live co-op timers, synced focus mode, daily 8H goals, and shared streaks. Built for two." },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/b9uXYmgdTyWTYhHfslbu4ZrHRZ73/social-images/social-1775640713838-continuum.webp" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/b9uXYmgdTyWTYhHfslbu4ZrHRZ73/social-images/social-1775640713838-continuum.webp" },
-      { name: "twitter:title", content: "Continuum — Build lasting habits" },
-      { name: "twitter:description", content: "A calm, focused habit tracker. Track streaks, visualize progress, and build your daily ritual." },
+      { name: "twitter:title", content: "OSHUDEV — Study together, focus deeper" },
+      { name: "twitter:description", content: "Live co-op timers, synced focus mode, daily 8H goals, and shared streaks." },
     ],
     links: [
-      {
-        rel: "preconnect",
-        href: "https://fonts.googleapis.com",
-      },
-      {
-        rel: "preconnect",
-        href: "https://fonts.gstatic.com",
-        crossOrigin: "anonymous",
-      },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
-      },
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" },
+      { rel: "stylesheet", href: appCss },
     ],
     scripts: [
-      {
-        children: `
-          (function() {
-            var theme = localStorage.getItem('continuum_theme') || 'light';
-            if (theme === 'system') {
-              theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            }
-            if (theme === 'dark') document.documentElement.classList.add('dark');
-          })();
-        `,
-      },
+      { children: `document.documentElement.classList.add('dark');` },
     ],
   }),
   shellComponent: RootShell,
@@ -60,7 +34,7 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
@@ -78,7 +52,7 @@ function RootComponent() {
       <div className="animate-page-enter">
         <Outlet />
       </div>
-      <Toaster position="top-center" />
+      <Toaster position="top-center" theme="dark" />
     </>
   );
 }
