@@ -1,381 +1,551 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useCallback } from "react";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  getHabits, getLogs, saveHabits, saveLogs, toggleHabit, isCompletedToday,
-  getStreak, getMilestoneMessage, updateHabit, isScheduledToday, frequencyLabel,
-  todayKey,
-} from "@/lib/habits";
-import type { Habit, HabitLog } from "@/lib/habits";
-import { HabitCard } from "@/components/HabitCard";
-import { ProgressRing } from "@/components/ProgressRing";
-import { BottomNav } from "@/components/BottomNav";
-import { AddHabitSheet } from "@/components/AddHabitSheet";
-import { EditHabitSheet } from "@/components/EditHabitSheet";
-import { OnboardingFlow, isOnboarded } from "@/components/OnboardingFlow";
-import { Leaf, Sparkles, ChevronDown, Pencil, Check } from "lucide-react";
+  Play, Pause, Square, Flame, Target, Timer, Users, LogOut,
+  Maximize2, Minimize2, Trophy, Activity, Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
-import { rescheduleAllReminders, scheduleReminder } from "@/lib/notifications";
+import { Logo } from "@/components/Logo";
+import { Particles } from "@/components/Particles";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/integrations/supabase/client";
 import {
-  fetchHabitsFromCloud, fetchLogsFromCloud, saveHabitToCloud,
-  updateHabitInCloud, deleteHabitFromCloud, reorderHabitsInCloud,
-  toggleLogInCloud, migrateLocalToCloud,
-} from "@/lib/habits-cloud";
-import {
-  DndContext, closestCenter, PointerSensor, TouchSensor,
-  useSensor, useSensors, DragOverlay,
-} from "@dnd-kit/core";
-import type { DragEndEvent, DragStartEvent, DragOverEvent } from "@dnd-kit/core";
-import {
-  SortableContext, verticalListSortingStrategy, arrayMove,
-} from "@dnd-kit/sortable";
+  DAILY_GOAL_SECONDS, fetchSessionsSince, fetchSlots, getMySlot, startSession,
+  endSession, touchSlot, startOfDayIso, startOfWeekIso, formatHMS,
+  todaySecondsForUser, computeStreak,
+  type ProfileSlot, type SlotName, type StudySession,
+} from "@/lib/coop";
 
 export const Route = createFileRoute("/app")({
-  component: TodayPage,
+  component: DashboardPage,
   head: () => ({
     meta: [
-      { title: "Continuum — Your daily ritual" },
-      { name: "description", content: "Build lasting habits with Continuum. Simple streak tracking, beautiful progress visualization." },
+      { title: "OSHUDEV — Dashboard" },
+      { name: "description", content: "Live co-op focus dashboard for DEV & OSHU." },
     ],
   }),
 });
 
-function TodayPage() {
-  const { user, isLoading: authLoading } = useAuth();
+function DashboardPage() {
+  const { user, isLoading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
-  const [habits, setHabits] = useState<Habit[]>([]);
-  const [logs, setLogs] = useState<HabitLog[]>([]);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [editHabit, setEditHabit] = useState<Habit | null>(null);
-  const [mounted, setMounted] = useState(false);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
-  );
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showNotScheduled, setShowNotScheduled] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [slots, setSlots] = useState<ProfileSlot[]>([]);
+  const [mySlot, setMySlot] = useState<SlotName | null>(null);
+  const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [active, setActive] = useState<StudySession | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [tick, setTick] = useState(0); // re-render every second
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  const isCloud = !!user;
-
-  const reorderScheduledHabits = useCallback((currentHabits: Habit[], activeId: string, overId: string) => {
-    const scheduled = currentHabits.filter((h) => isScheduledToday(h));
-    const activeIndex = scheduled.findIndex((h) => h.id === activeId);
-    const overIndex = scheduled.findIndex((h) => h.id === overId);
-
-    if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) {
-      return currentHabits;
-    }
-
-    const reorderedScheduled = arrayMove(scheduled, activeIndex, overIndex);
-    let scheduledPointer = 0;
-
-    return currentHabits.map((habit) => {
-      if (!isScheduledToday(habit)) return habit;
-      const nextHabit = reorderedScheduled[scheduledPointer];
-      scheduledPointer += 1;
-      return nextHabit;
-    });
-  }, []);
-
+  // Redirect unauthenticated → /select
   useEffect(() => {
-    if (authLoading) return;
+    if (!authLoading && !user) navigate({ to: "/select" });
+  }, [authLoading, user, navigate]);
 
-    const loadData = async () => {
-      if (user) {
-        try {
-          await migrateLocalToCloud(user.id);
-          const [h, l] = await Promise.all([
-            fetchHabitsFromCloud(user.id),
-            fetchLogsFromCloud(user.id),
-          ]);
-          setHabits(h);
-          setLogs(l);
-          rescheduleAllReminders(h);
-        } catch (err) {
-          console.error("Failed to load from cloud:", err);
-          // Fallback to local
-          const h = getHabits();
-          setHabits(h);
-          setLogs(getLogs());
-          rescheduleAllReminders(h);
-        }
-      } else {
-        const h = getHabits();
-        setHabits(h);
-        setLogs(getLogs());
-        setShowOnboarding(!isOnboarded() && h.length === 0);
-        rescheduleAllReminders(h);
+  // Bootstrap + realtime
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const boot = async () => {
+      try {
+        const [slotsRes, mine, weekly] = await Promise.all([
+          fetchSlots(),
+          getMySlot(user.id),
+          fetchSessionsSince(startOfWeekIso()),
+        ]);
+        if (cancelled) return;
+        setSlots(slotsRes);
+        setMySlot(mine);
+        setSessions(weekly);
+        const open = weekly.find((s) => s.user_id === user.id && !s.ended_at);
+        if (open) setActive(open);
+        touchSlot().catch(() => {});
+        if (!mine) navigate({ to: "/select" });
+      } finally {
+        if (!cancelled) setReady(true);
       }
-      setMounted(true);
     };
+    boot();
 
-    loadData();
-  }, [user, authLoading]);
+    const channel = supabase
+      .channel("study_sessions_feed")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "study_sessions" },
+        (payload) => {
+          setSessions((prev) => {
+            const row = (payload.new ?? payload.old) as StudySession;
+            if (payload.eventType === "DELETE") {
+              return prev.filter((s) => s.id !== row.id);
+            }
+            const next = (payload.new as StudySession);
+            const idx = prev.findIndex((s) => s.id === next.id);
+            if (idx === -1) return [next, ...prev];
+            const copy = prev.slice();
+            copy[idx] = next;
+            return copy;
+          });
+        },
+      )
+      .subscribe();
 
-  const handleToggle = async (habitId: string) => {
-    const streakBefore = getStreak(habitId, logs, habits);
-    const today = todayKey();
-    const exists = isCompletedToday(habitId, logs);
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user, navigate]);
 
-    // Optimistic update
-    const updated = toggleHabit(habitId, logs);
-    setLogs(updated);
-
-    if (isCloud && user) {
-      try {
-        await toggleLogInCloud(habitId, today, user.id, exists);
-      } catch (err) {
-        console.error("Cloud toggle failed:", err);
-      }
-    } else {
-      saveLogs(updated);
-    }
-
-    const streakAfter = getStreak(habitId, updated, habits);
-    if (streakAfter > streakBefore) {
-      const msg = getMilestoneMessage(streakAfter);
-      if (msg) {
-        const habit = habits.find((h) => h.id === habitId);
-        toast.success(msg, { description: habit?.name });
-      }
-    }
-  };
-
-  const handleAdd = async (habit: Habit) => {
-    const updated = [...habits, habit];
-    setHabits(updated);
-    scheduleReminder(habit);
-
-    if (isCloud && user) {
-      try {
-        await saveHabitToCloud(habit, user.id, updated.length - 1);
-      } catch (err) {
-        console.error("Cloud save failed:", err);
-      }
-    } else {
-      saveHabits(updated);
-    }
-  };
-
-  const handleEdit = async (updatedHabit: Habit) => {
-    const newHabits = updateHabit(habits, updatedHabit);
-    setHabits(newHabits);
-    scheduleReminder(updatedHabit);
-
-    if (isCloud) {
-      try {
-        await updateHabitInCloud(updatedHabit);
-      } catch (err) {
-        console.error("Cloud update failed:", err);
-      }
-    } else {
-      saveHabits(newHabits);
-    }
-  };
-
-  const handleDelete = async (habitId: string) => {
-    const updated = habits.filter((h) => h.id !== habitId);
-    setHabits(updated);
-
-    if (isCloud) {
-      try {
-        await deleteHabitFromCloud(habitId);
-      } catch (err) {
-        console.error("Cloud delete failed:", err);
-      }
-    } else {
-      saveHabits(updated);
-    }
-    toast("Habit removed");
-  };
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+  // Live timer tick
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+  // Esc to exit focus mode
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFocusMode(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusMode]);
 
-    setHabits((currentHabits) => reorderScheduledHabits(currentHabits, String(active.id), String(over.id)));
-  }, [reorderScheduledHabits]);
-
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    setActiveId(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const reordered = reorderScheduledHabits(habits, String(active.id), String(over.id));
-    if (reordered === habits) return;
-
-    if (isCloud) {
-      try {
-        await reorderHabitsInCloud(reordered);
-      } catch (err) {
-        console.error("Cloud reorder failed:", err);
-      }
-    } else {
-      saveHabits(reordered);
+  const handleStart = useCallback(async () => {
+    if (!user || active || busy) return;
+    setBusy(true);
+    try {
+      const s = await startSession(user.id, focusMode, label.trim() || undefined);
+      setActive(s);
+      toast.success("Focus started");
+    } catch (e) {
+      toast.error("Could not start session");
+    } finally {
+      setBusy(false);
     }
-  }, [habits, isCloud, reorderScheduledHabits]);
+  }, [user, active, busy, focusMode, label]);
 
-  const handleOnboardingComplete = (habit?: Habit) => {
-    setShowOnboarding(false);
-    if (habit) {
-      handleAdd(habit);
+  const handleStop = useCallback(async () => {
+    if (!active || busy) return;
+    setBusy(true);
+    try {
+      const elapsed = Math.floor((Date.now() - new Date(active.started_at).getTime()) / 1000);
+      await endSession(active.id, elapsed);
+      setActive(null);
+      setLabel("");
+      toast.success(`Logged ${formatHMS(elapsed)}`);
+    } catch {
+      toast.error("Could not stop session");
+    } finally {
+      setBusy(false);
     }
-  };
+  }, [active, busy]);
 
-  // Split habits into scheduled today and not scheduled
-  const scheduledToday = habits.filter((h) => isScheduledToday(h));
-  const notScheduledToday = habits.filter((h) => !isScheduledToday(h));
+  // Derived stats (re-computed each tick)
+  const { slotStats, combinedToday, combinedGoalPct } = useMemo(() => {
+    void tick; // depend on tick
+    const stats = (["DEV", "OSHU"] as SlotName[]).map((name) => {
+      const slot = slots.find((s) => s.slot === name);
+      const uid = slot?.user_id ?? null;
+      const today = uid ? todaySecondsForUser(sessions, uid) : 0;
+      const week = uid
+        ? sessions
+            .filter((s) => s.user_id === uid)
+            .reduce((acc, s) => {
+              const startedAt = new Date(s.started_at).getTime();
+              const endedAt = s.ended_at ? new Date(s.ended_at).getTime() : Date.now();
+              return acc + Math.max(0, Math.floor((endedAt - startedAt) / 1000));
+            }, 0)
+        : 0;
+      const streak = uid ? computeStreak(sessions, uid) : 0;
+      const isLive = !!sessions.find((s) => s.user_id === uid && !s.ended_at);
+      return { name, uid, today, week, streak, isLive, slot };
+    });
+    const combined = stats.reduce((a, s) => a + s.today, 0);
+    const pct = Math.min(100, Math.round((combined / (2 * DAILY_GOAL_SECONDS)) * 100));
+    return { slotStats: stats, combinedToday: combined, combinedGoalPct: pct };
+  }, [sessions, slots, tick]);
 
-  const completedCount = scheduledToday.filter((h) => isCompletedToday(h.id, logs)).length;
-  const allDone = scheduledToday.length > 0 && completedCount === scheduledToday.length;
+  const me = slotStats.find((s) => s.name === mySlot);
+  const partner = slotStats.find((s) => s.name !== mySlot);
 
-  if (!mounted || authLoading) return null;
+  const activeElapsed = active
+    ? Math.max(0, Math.floor((Date.now() - new Date(active.started_at).getTime()) / 1000))
+    : 0;
 
-  if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+  if (authLoading || !ready || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-muted-foreground text-sm font-mono">Loading…</div>
+      </div>
+    );
   }
 
-  const now = new Date();
-  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  // ── FOCUS MODE (immersive) ───────────────────────────
+  if (focusMode) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background overflow-hidden">
+        <div className="absolute inset-0 bg-mesh opacity-70 pointer-events-none" />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[820px] h-[820px] rounded-full pointer-events-none animate-float-orb"
+          style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--primary) 24%, transparent), transparent 60%)" }}
+        />
+        <Particles count={26} />
 
-  const subtitle = scheduledToday.length === 0 && habits.length > 0
-    ? "Nothing scheduled today"
-    : scheduledToday.length === 0
-      ? ""
-      : allDone
-        ? "All done for today ✨"
-        : `${completedCount} of ${scheduledToday.length} done`;
+        <button
+          onClick={() => setFocusMode(false)}
+          className="absolute top-6 right-6 z-10 inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Minimize2 className="w-3.5 h-3.5" /> Exit focus · Esc
+        </button>
 
-  return (
-    <div className="min-h-screen pb-28 relative">
-      <div className="relative max-w-lg mx-auto px-5 pt-12">
-        {/* Header */}
-        <div className="flex items-start justify-between animate-fade-up-blur">
-          <div>
-            <p className="text-[13px] text-muted-foreground font-medium">{greeting}</p>
-            <h1 className="text-2xl font-semibold text-foreground mt-0.5 tracking-tight" style={{ lineHeight: "1.2" }}>
-              {allDone ? (
-                <span className="flex items-center gap-2">
-                  Perfect day
-                  <Sparkles className="w-5 h-5 text-primary" />
-                </span>
-              ) : (
-                "Your daily ritual"
-              )}
-            </h1>
-            {subtitle && <p className="text-sm text-muted-foreground mt-1">{dateStr} · {subtitle}</p>}
-            {!subtitle && <p className="text-sm text-muted-foreground mt-1">{dateStr}</p>}
+        <div className="relative z-10 h-full flex flex-col items-center justify-center px-6">
+          <p className="font-mono text-xs uppercase tracking-[0.4em] text-primary mb-6">
+            {active ? "Focusing" : "Ready when you are"}
+          </p>
+          <div className="font-mono text-7xl md:text-9xl tabular-nums tracking-tight text-foreground text-glow">
+            {formatHMS(activeElapsed)}
           </div>
-          {scheduledToday.length > 0 && (
-            <div className="flex-shrink-0 -mt-1">
-              <ProgressRing completed={completedCount} total={scheduledToday.length} />
+          {active?.label && (
+            <p className="mt-4 text-sm text-muted-foreground italic">{active.label}</p>
+          )}
+
+          <div className="mt-12 flex items-center gap-3">
+            {!active ? (
+              <button
+                onClick={handleStart}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform disabled:opacity-50"
+              >
+                <Play className="w-4 h-4" /> Start session
+              </button>
+            ) : (
+              <button
+                onClick={handleStop}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full glass-strong px-8 py-3.5 text-sm font-semibold text-foreground hover:glow-ring transition-all disabled:opacity-50"
+              >
+                <Square className="w-4 h-4" /> End session
+              </button>
+            )}
+          </div>
+
+          {/* Partner presence */}
+          {partner && (
+            <div className="mt-16 glass rounded-2xl px-5 py-3 inline-flex items-center gap-3">
+              <span className={`w-2 h-2 rounded-full ${partner.isLive ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
+              <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+                {partner.name} {partner.isLive ? "is focusing" : "is away"}
+              </span>
+              <span className="text-xs font-mono tabular-nums text-foreground">
+                {formatHMS(partner.today)}
+              </span>
             </div>
           )}
         </div>
+      </div>
+    );
+  }
 
-        {/* Habit list */}
-        {habits.length === 0 ? (
-          <div className="border-2 border-dashed border-muted-foreground/20 rounded-2xl py-16 px-6 text-center animate-fade-up-blur mt-6" style={{ animationDelay: "160ms" }}>
-            <Leaf className="w-7 h-7 text-muted-foreground/40 mx-auto mb-4" />
-            <p className="text-foreground font-semibold text-lg">A fresh start</p>
-            <p className="text-sm text-muted-foreground mt-1.5 max-w-[240px] mx-auto" style={{ textWrap: "pretty" }}>
-              Tap the + button below to add your first habit
-            </p>
+  // ── DASHBOARD ────────────────────────────────────────
+  return (
+    <div className="min-h-screen text-foreground relative overflow-x-hidden pb-20">
+      <div className="absolute inset-0 bg-mesh opacity-40 pointer-events-none" />
+      <Particles count={14} />
+
+      <header className="relative z-10 max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <Logo />
+        <div className="flex items-center gap-3">
+          <Link to="/select" className="hidden sm:inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+            Switch profile
+          </Link>
+          <button
+            onClick={() => { signOut(); navigate({ to: "/" }); }}
+            className="inline-flex items-center gap-2 rounded-full glass px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Sign out"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Sign out
+          </button>
+        </div>
+      </header>
+
+      <main className="relative z-10 max-w-6xl mx-auto px-6 mt-4">
+        <div className="flex items-baseline gap-3 animate-fade-up-blur">
+          <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-primary">CO-OP MODE</p>
+          <span className="text-xs text-muted-foreground">·</span>
+          <p className="text-xs text-muted-foreground font-mono">You are <span className="text-foreground">{mySlot ?? "—"}</span></p>
+        </div>
+        <h1 className="mt-2 text-3xl md:text-4xl font-display font-bold tracking-tight animate-fade-up-blur" style={{ animationDelay: "60ms" }}>
+          Your shared 8-hour ritual.
+        </h1>
+
+        {/* Primary timer + goal ring */}
+        <section className="mt-8 grid lg:grid-cols-[1.4fr_1fr] gap-5 animate-fade-up-blur" style={{ animationDelay: "120ms" }}>
+          <TimerPanel
+            active={active}
+            elapsed={activeElapsed}
+            label={label}
+            setLabel={setLabel}
+            busy={busy}
+            onStart={handleStart}
+            onStop={handleStop}
+            onFocus={() => setFocusMode(true)}
+          />
+          <GoalRing
+            pct={combinedGoalPct}
+            combined={combinedToday}
+          />
+        </section>
+
+        {/* Stat strip */}
+        <section className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3 animate-fade-up-blur" style={{ animationDelay: "180ms" }}>
+          <Stat icon={Timer} label="My today" value={formatHMS(me?.today ?? 0)} sub={`goal ${formatHMS(DAILY_GOAL_SECONDS)}`} />
+          <Stat icon={Activity} label="My week" value={formatHMS(me?.week ?? 0)} sub="combined sessions" />
+          <Stat icon={Flame} label="My streak" value={`${me?.streak ?? 0}d`} sub="consecutive days" />
+          <Stat icon={Users} label="Together today" value={formatHMS(combinedToday)} sub={`${combinedGoalPct}% of 16h`} pulse />
+        </section>
+
+        {/* Leaderboard */}
+        <section className="mt-8 animate-fade-up-blur" style={{ animationDelay: "240ms" }}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-display font-semibold inline-flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-primary" /> Co-op leaderboard
+            </h2>
+            <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">this week</span>
           </div>
+          <Leaderboard stats={slotStats} mySlot={mySlot} />
+        </section>
+
+        {/* Recent sessions */}
+        <section className="mt-8 animate-fade-up-blur" style={{ animationDelay: "300ms" }}>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-display font-semibold inline-flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" /> Recent sessions
+            </h2>
+          </div>
+          <RecentSessions sessions={sessions} slots={slots} />
+        </section>
+      </main>
+    </div>
+  );
+}
+
+/* ── Timer panel ─────────────────────────────────────── */
+function TimerPanel({
+  active, elapsed, label, setLabel, busy, onStart, onStop, onFocus,
+}: {
+  active: StudySession | null;
+  elapsed: number;
+  label: string;
+  setLabel: (s: string) => void;
+  busy: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  onFocus: () => void;
+}) {
+  return (
+    <div className="glass-strong rounded-3xl p-6 md:p-8 relative overflow-hidden">
+      <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--primary) 30%, transparent), transparent 60%)" }}
+      />
+      <div className="relative flex items-center justify-between text-xs font-mono uppercase tracking-widest text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
+          {active ? "Focusing" : "Idle"}
+        </span>
+        <button
+          onClick={onFocus}
+          className="inline-flex items-center gap-1.5 rounded-full glass px-3 py-1.5 hover:text-foreground transition-colors"
+        >
+          <Maximize2 className="w-3 h-3" /> Focus mode
+        </button>
+      </div>
+
+      <div className="relative mt-6 font-mono text-5xl md:text-7xl tabular-nums tracking-tight text-foreground">
+        {formatHMS(elapsed)}
+      </div>
+
+      <div className="relative mt-6">
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          disabled={!!active}
+          placeholder="What are you focusing on? (optional)"
+          className="w-full bg-transparent border-b border-border/60 focus:border-primary outline-none py-2 text-sm placeholder:text-muted-foreground disabled:opacity-60"
+        />
+      </div>
+
+      <div className="relative mt-5 flex items-center gap-3">
+        {!active ? (
+          <button
+            onClick={onStart}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform disabled:opacity-50"
+          >
+            <Play className="w-4 h-4" /> Start session
+          </button>
         ) : (
           <>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
-            <SortableContext items={scheduledToday.map((h) => h.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-3 mt-6">
-                {scheduledToday.map((habit, i) => (
-                  <HabitCard
-                    key={habit.id}
-                    habit={habit}
-                    logs={logs}
-                    habits={habits}
-                    index={i}
-                    onToggle={handleToggle}
-                    onDelete={handleDelete}
-                    onEdit={(h) => setEditHabit(h)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-            <DragOverlay dropAnimation={null}>
-              {activeId ? (() => {
-                const habit = scheduledToday.find((h) => h.id === activeId);
-                if (!habit) return null;
-                const i = scheduledToday.indexOf(habit);
-                return (
-                  <div className="relative" style={{ width: "100%" }}>
-                    <div className="relative overflow-hidden rounded-lg bg-card shadow-[0_8px_24px_rgba(0,0,0,0.15)] cursor-grabbing">
-                      <div className="absolute left-2.5 top-3 bottom-3 w-1 rounded-full" style={{ backgroundColor: habit.color }} />
-                      <div className="flex items-center gap-3 p-4 pl-6">
-                        <div className={`flex-shrink-0 w-12 h-12 rounded-full border-2 flex items-center justify-center ${isCompletedToday(habit.id, logs) ? "border-transparent" : "border-border bg-background"}`}
-                          style={isCompletedToday(habit.id, logs) ? { backgroundColor: habit.color } : undefined}>
-                          {isCompletedToday(habit.id, logs) && <Check className="w-5 h-5 text-white" strokeWidth={2.5} />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`font-medium text-[15px] leading-snug ${isCompletedToday(habit.id, logs) ? "line-through text-muted-foreground" : "text-foreground"}`}>{habit.name}</p>
-                          {habit.description && <p className="text-sm text-muted-foreground mt-0.5 truncate">{habit.description}</p>}
-                        </div>
-                        {getStreak(habit.id, logs, habits) > 0 && (
-                          <div className="flex items-baseline gap-0.5">
-                            <span className="font-mono text-base font-semibold text-foreground tabular-nums">{getStreak(habit.id, logs, habits)}</span>
-                            <span className="text-xs text-muted-foreground font-medium">d</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })() : null}
-            </DragOverlay>
-          </DndContext>
-
-            {notScheduledToday.length > 0 && (
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowNotScheduled(!showNotScheduled)}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2 hover:text-foreground transition-colors"
-                >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showNotScheduled ? "rotate-0" : "-rotate-90"}`} />
-                  Not scheduled today ({notScheduledToday.length})
-                </button>
-                {showNotScheduled && (
-                  <div className="space-y-2 opacity-60">
-                    {notScheduledToday.map((habit) => (
-                      <button
-                        key={habit.id}
-                        onClick={() => setEditHabit(habit)}
-                        className="flex items-center gap-3 rounded-xl bg-card/50 px-4 py-3 w-full text-left hover:bg-card/80 transition-colors"
-                      >
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: habit.color }} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-muted-foreground">{habit.name}</p>
-                          <p className="text-[11px] text-muted-foreground/60">{frequencyLabel(habit.frequency)}</p>
-                        </div>
-                        <Pencil className="w-3.5 h-3.5 text-muted-foreground/40" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <button
+              onClick={onStop}
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-full glass-strong px-6 py-3 text-sm font-semibold text-foreground hover:glow-ring transition-all disabled:opacity-50"
+            >
+              <Square className="w-4 h-4" /> End session
+            </button>
+            <span className="text-xs text-muted-foreground font-mono">
+              started {new Date(active.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
           </>
         )}
       </div>
+    </div>
+  );
+}
 
-      <BottomNav onAddClick={() => setSheetOpen(true)} />
-      <AddHabitSheet open={sheetOpen} onClose={() => setSheetOpen(false)} onAdd={handleAdd} />
-      <EditHabitSheet habit={editHabit} onClose={() => setEditHabit(null)} onSave={handleEdit} onDelete={handleDelete} />
+/* ── Goal ring ───────────────────────────────────────── */
+function GoalRing({ pct, combined }: { pct: number; combined: number }) {
+  const r = 78;
+  const c = 2 * Math.PI * r;
+  const dash = c * (1 - pct / 100);
+  return (
+    <div className="glass rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+      <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-muted-foreground">DAILY 16H GOAL</p>
+      <div className="relative w-44 h-44 mt-3">
+        <svg viewBox="0 0 200 200" className="absolute inset-0 -rotate-90">
+          <circle cx="100" cy="100" r={r} fill="none" stroke="color-mix(in oklab, var(--foreground) 10%, transparent)" strokeWidth="8" />
+          <circle
+            cx="100" cy="100" r={r} fill="none"
+            stroke="var(--primary)" strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={c} strokeDashoffset={dash}
+            style={{ transition: "stroke-dashoffset 700ms cubic-bezier(0.16,1,0.3,1)" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-4xl tabular-nums">{pct}%</span>
+          <span className="text-[11px] text-muted-foreground mt-1 font-mono tabular-nums">{formatHMS(combined)}</span>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground mt-3 inline-flex items-center gap-1.5">
+        <Target className="w-3.5 h-3.5 text-primary" /> Half is yours, half is theirs
+      </p>
+    </div>
+  );
+}
+
+/* ── Stat tile ───────────────────────────────────────── */
+function Stat({
+  icon: Icon, label, value, sub, pulse,
+}: { icon: typeof Timer; label: string; value: string; sub: string; pulse?: boolean }) {
+  return (
+    <div className="glass rounded-2xl p-4">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+        <Icon className="w-3.5 h-3.5 text-primary" />
+        {label}
+      </div>
+      <div className="mt-2 font-mono text-2xl tabular-nums text-foreground">{value}</div>
+      <div className="mt-1 text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+        {pulse && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-glow" />}
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+/* ── Leaderboard ─────────────────────────────────────── */
+type SlotStat = {
+  name: SlotName; uid: string | null; today: number; week: number;
+  streak: number; isLive: boolean; slot: ProfileSlot | undefined;
+};
+function Leaderboard({ stats, mySlot }: { stats: SlotStat[]; mySlot: SlotName | null }) {
+  const sorted = [...stats].sort((a, b) => b.week - a.week);
+  const max = Math.max(1, ...sorted.map((s) => s.week));
+  return (
+    <div className="grid sm:grid-cols-2 gap-3">
+      {sorted.map((s, idx) => {
+        const pct = Math.round((s.week / max) * 100);
+        const isMe = s.name === mySlot;
+        return (
+          <div key={s.name} className={`glass rounded-2xl p-5 relative overflow-hidden ${isMe ? "glow-ring" : ""}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-muted-foreground">#{idx + 1}</span>
+                <span className="font-display font-semibold text-lg tracking-tight">{s.name}</span>
+                {isMe && <span className="text-[10px] font-mono uppercase tracking-widest text-primary">you</span>}
+              </div>
+              <span className={`inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest ${s.isLive ? "text-primary" : "text-muted-foreground"}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${s.isLive ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
+                {s.isLive ? "live" : "idle"}
+              </span>
+            </div>
+
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">week</p>
+                <p className="font-mono text-2xl tabular-nums">{formatHMS(s.week)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">today</p>
+                <p className="font-mono text-base tabular-nums">{formatHMS(s.today)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">streak</p>
+                <p className="font-mono text-base tabular-nums inline-flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-primary" />{s.streak}d
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-700"
+                style={{ width: `${pct}%`, boxShadow: "0 0 12px color-mix(in oklab, var(--primary) 50%, transparent)" }}
+              />
+            </div>
+            {!s.uid && (
+              <p className="mt-3 text-[11px] text-muted-foreground">Slot is empty. Invite them from /select.</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Recent sessions ─────────────────────────────────── */
+function RecentSessions({ sessions, slots }: { sessions: StudySession[]; slots: ProfileSlot[] }) {
+  const slotName = (uid: string): SlotName | "—" => {
+    const s = slots.find((x) => x.user_id === uid);
+    return (s?.slot as SlotName) ?? "—";
+  };
+  const rows = sessions.slice(0, 8);
+  if (rows.length === 0) {
+    return (
+      <div className="glass rounded-2xl p-8 text-center">
+        <p className="text-sm text-muted-foreground">No sessions yet. Start the first one above.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="glass rounded-2xl divide-y divide-border/40 overflow-hidden">
+      {rows.map((s) => {
+        const elapsed = s.ended_at
+          ? s.duration_seconds || Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000)
+          : Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000);
+        return (
+          <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+            <span className={`w-1.5 h-1.5 rounded-full ${s.ended_at ? "bg-muted-foreground/40" : "bg-primary animate-pulse-glow"}`} />
+            <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground w-12">{slotName(s.user_id)}</span>
+            <span className="flex-1 text-sm text-foreground truncate">{s.label || (s.focus_mode ? "Focus session" : "Session")}</span>
+            <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
+              {new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="font-mono text-sm tabular-nums">{formatHMS(elapsed)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
