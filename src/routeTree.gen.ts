@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SelectRouteImport } from './routes/select'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as AppRouteImport } from './routes/app'
@@ -18,6 +19,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SelectRoute = SelectRouteImport.update({
+  id: '/select',
+  path: '/select',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/select': typeof SelectRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/select': typeof SelectRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,22 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/select': typeof SelectRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/insights' | '/login' | '/settings'
+  fullPaths: '/' | '/app' | '/insights' | '/login' | '/select' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/insights' | '/login' | '/settings'
-  id: '__root__' | '/' | '/app' | '/insights' | '/login' | '/settings'
+  to: '/' | '/app' | '/insights' | '/login' | '/select' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/insights'
+    | '/login'
+    | '/select'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +92,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
+  SelectRoute: typeof SelectRoute
   SettingsRoute: typeof SettingsRoute
 }
 
@@ -86,6 +103,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/select': {
+      id: '/select'
+      path: '/select'
+      fullPath: '/select'
+      preLoaderRoute: typeof SelectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -124,6 +148,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
+  SelectRoute: SelectRoute,
   SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport

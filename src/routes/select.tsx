@@ -8,8 +8,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { claimSlot, fetchSlots, getMySlot, touchSlot, type ProfileSlot, type SlotName } from "@/lib/coop";
 
 export const Route = createFileRoute("/select")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    claim: (s.claim as string | undefined) as SlotName | undefined,
+  validateSearch: (s: Record<string, unknown>): { claim?: SlotName } => ({
+    claim: (s.claim === "DEV" || s.claim === "OSHU") ? s.claim : undefined,
   }),
   component: SelectPage,
   head: () => ({
