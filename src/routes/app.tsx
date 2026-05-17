@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Play, Pause, Square, Flame, Target, Timer, Users, LogOut,
   Maximize2, Minimize2, Trophy, Activity, Sparkles,
