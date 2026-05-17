@@ -82,6 +82,27 @@ export type Database = {
         }
         Relationships: []
       }
+      profile_slots: {
+        Row: {
+          created_at: string
+          last_visited_at: string | null
+          slot: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          last_visited_at?: string | null
+          slot: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          last_visited_at?: string | null
+          slot?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -103,12 +124,60 @@ export type Database = {
         }
         Relationships: []
       }
+      study_sessions: {
+        Row: {
+          created_at: string
+          duration_seconds: number
+          ended_at: string | null
+          focus_mode: boolean
+          id: string
+          label: string | null
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          focus_mode?: boolean
+          id?: string
+          label?: string | null
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          focus_mode?: boolean
+          id?: string
+          label?: string | null
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_profile_slot: {
+        Args: { _slot: string }
+        Returns: {
+          created_at: string
+          last_visited_at: string | null
+          slot: string
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profile_slots"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      touch_profile_slot: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
