@@ -1,19 +1,18 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Play, Pause, Square, Flame, Target, Timer, Users, LogOut,
+  Play, Square, Flame, Target, Timer, Users, LogOut,
   Maximize2, Minimize2, Trophy, Activity, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Logo } from "@/components/Logo";
 import { Particles } from "@/components/Particles";
-import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
 import {
-  DAILY_GOAL_SECONDS, fetchSessionsSince, fetchSlots, getMySlot, startSession,
-  endSession, touchSlot, startOfDayIso, startOfWeekIso, formatHMS,
-  todaySecondsForUser, computeStreak,
-  type ProfileSlot, type SlotName, type StudySession,
+  DAILY_GOAL_SECONDS, getAllSessions, startSession, endSession,
+  getCurrentSlot, clearCurrentSlot, touchSlot,
+  startOfWeekIso, formatHMS,
+  todaySecondsForSlot, weekSecondsForSlot, computeStreak,
+  type SlotName, type StudySession,
 } from "@/lib/coop";
 
 export const Route = createFileRoute("/app")({
@@ -27,85 +26,49 @@ export const Route = createFileRoute("/app")({
 });
 
 function DashboardPage() {
-  const { user, isLoading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
-
-  const [slots, setSlots] = useState<ProfileSlot[]>([]);
   const [mySlot, setMySlot] = useState<SlotName | null>(null);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [active, setActive] = useState<StudySession | null>(null);
   const [focusMode, setFocusMode] = useState(false);
-  const [tick, setTick] = useState(0); // re-render every second
+  const [tick, setTick] = useState(0);
   const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
-  // Redirect unauthenticated → /select
+  // Bootstrap
   useEffect(() => {
-    if (!authLoading && !user) navigate({ to: "/select" });
-  }, [authLoading, user, navigate]);
+    const slot = getCurrentSlot();
+    if (!slot) { navigate({ to: "/" }); return; }
+    setMySlot(slot);
+    touchSlot(slot);
+    const since = startOfWeekIso();
+    const sessionsSinceWeek = getAllSessions().filter(
+      (s) => new Date(s.started_at).getTime() >= new Date(since).getTime()
+    );
+    setSessions(sessionsSinceWeek);
+    const open = sessionsSinceWeek.find((s) => s.slot === slot && !s.ended_at);
+    if (open) setActive(open);
+    setReady(true);
 
-  // Bootstrap + realtime
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    const boot = async () => {
-      try {
-        const [slotsRes, mine, weekly] = await Promise.all([
-          fetchSlots(),
-          getMySlot(user.id),
-          fetchSessionsSince(startOfWeekIso()),
-        ]);
-        if (cancelled) return;
-        setSlots(slotsRes);
-        setMySlot(mine);
-        setSessions(weekly);
-        const open = weekly.find((s) => s.user_id === user.id && !s.ended_at);
-        if (open) setActive(open);
-        touchSlot().catch(() => {});
-        if (!mine) navigate({ to: "/select" });
-      } finally {
-        if (!cancelled) setReady(true);
-      }
+    const onChange = () => {
+      const fresh = getAllSessions().filter(
+        (s) => new Date(s.started_at).getTime() >= new Date(since).getTime()
+      );
+      setSessions(fresh);
     };
-    boot();
-
-    const channel = supabase
-      .channel("study_sessions_feed")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "study_sessions" },
-        (payload) => {
-          setSessions((prev) => {
-            const row = (payload.new ?? payload.old) as StudySession;
-            if (payload.eventType === "DELETE") {
-              return prev.filter((s) => s.id !== row.id);
-            }
-            const next = (payload.new as StudySession);
-            const idx = prev.findIndex((s) => s.id === next.id);
-            if (idx === -1) return [next, ...prev];
-            const copy = prev.slice();
-            copy[idx] = next;
-            return copy;
-          });
-        },
-      )
-      .subscribe();
-
+    window.addEventListener("oshudev:sessions-changed", onChange);
+    window.addEventListener("storage", onChange);
     return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
+      window.removeEventListener("oshudev:sessions-changed", onChange);
+      window.removeEventListener("storage", onChange);
     };
-  }, [user, navigate]);
+  }, [navigate]);
 
-  // Live timer tick
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Esc to exit focus mode
   useEffect(() => {
     if (!focusMode) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFocusMode(false); };
@@ -113,60 +76,35 @@ function DashboardPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [focusMode]);
 
-  const handleStart = useCallback(async () => {
-    if (!user || active || busy) return;
-    setBusy(true);
-    try {
-      const s = await startSession(user.id, focusMode, label.trim() || undefined);
-      setActive(s);
-      toast.success("Focus started");
-    } catch (e) {
-      toast.error("Could not start session");
-    } finally {
-      setBusy(false);
-    }
-  }, [user, active, busy, focusMode, label]);
+  const handleStart = useCallback(() => {
+    if (!mySlot || active) return;
+    const s = startSession(mySlot, focusMode, label.trim() || undefined);
+    setActive(s);
+    toast.success("Focus started");
+  }, [mySlot, active, focusMode, label]);
 
-  const handleStop = useCallback(async () => {
-    if (!active || busy) return;
-    setBusy(true);
-    try {
-      const elapsed = Math.floor((Date.now() - new Date(active.started_at).getTime()) / 1000);
-      await endSession(active.id, elapsed);
-      setActive(null);
-      setLabel("");
-      toast.success(`Logged ${formatHMS(elapsed)}`);
-    } catch {
-      toast.error("Could not stop session");
-    } finally {
-      setBusy(false);
-    }
-  }, [active, busy]);
+  const handleStop = useCallback(() => {
+    if (!active) return;
+    const elapsed = Math.floor((Date.now() - new Date(active.started_at).getTime()) / 1000);
+    endSession(active.id);
+    setActive(null);
+    setLabel("");
+    toast.success(`Logged ${formatHMS(elapsed)}`);
+  }, [active]);
 
-  // Derived stats (re-computed each tick)
   const { slotStats, combinedToday, combinedGoalPct } = useMemo(() => {
-    void tick; // depend on tick
+    void tick;
     const stats = (["DEV", "OSHU"] as SlotName[]).map((name) => {
-      const slot = slots.find((s) => s.slot === name);
-      const uid = slot?.user_id ?? null;
-      const today = uid ? todaySecondsForUser(sessions, uid) : 0;
-      const week = uid
-        ? sessions
-            .filter((s) => s.user_id === uid)
-            .reduce((acc, s) => {
-              const startedAt = new Date(s.started_at).getTime();
-              const endedAt = s.ended_at ? new Date(s.ended_at).getTime() : Date.now();
-              return acc + Math.max(0, Math.floor((endedAt - startedAt) / 1000));
-            }, 0)
-        : 0;
-      const streak = uid ? computeStreak(sessions, uid) : 0;
-      const isLive = !!sessions.find((s) => s.user_id === uid && !s.ended_at);
-      return { name, uid, today, week, streak, isLive, slot };
+      const today = todaySecondsForSlot(sessions, name);
+      const week = weekSecondsForSlot(sessions, name);
+      const streak = computeStreak(sessions, name);
+      const isLive = !!sessions.find((s) => s.slot === name && !s.ended_at);
+      return { name, today, week, streak, isLive };
     });
     const combined = stats.reduce((a, s) => a + s.today, 0);
     const pct = Math.min(100, Math.round((combined / (2 * DAILY_GOAL_SECONDS)) * 100));
     return { slotStats: stats, combinedToday: combined, combinedGoalPct: pct };
-  }, [sessions, slots, tick]);
+  }, [sessions, tick]);
 
   const me = slotStats.find((s) => s.name === mySlot);
   const partner = slotStats.find((s) => s.name !== mySlot);
@@ -175,7 +113,7 @@ function DashboardPage() {
     ? Math.max(0, Math.floor((Date.now() - new Date(active.started_at).getTime()) / 1000))
     : 0;
 
-  if (authLoading || !ready || !user) {
+  if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-muted-foreground text-sm font-mono">Loading…</div>
@@ -183,7 +121,6 @@ function DashboardPage() {
     );
   }
 
-  // ── FOCUS MODE (immersive) ───────────────────────────
   if (focusMode) {
     return (
       <div className="fixed inset-0 z-50 bg-background overflow-hidden">
@@ -208,40 +145,27 @@ function DashboardPage() {
           <div className="font-mono text-7xl md:text-9xl tabular-nums tracking-tight text-foreground text-glow">
             {formatHMS(activeElapsed)}
           </div>
-          {active?.label && (
-            <p className="mt-4 text-sm text-muted-foreground italic">{active.label}</p>
-          )}
+          {active?.label && <p className="mt-4 text-sm text-muted-foreground italic">{active.label}</p>}
 
           <div className="mt-12 flex items-center gap-3">
             {!active ? (
-              <button
-                onClick={handleStart}
-                disabled={busy}
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform disabled:opacity-50"
-              >
+              <button onClick={handleStart} className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform">
                 <Play className="w-4 h-4" /> Start session
               </button>
             ) : (
-              <button
-                onClick={handleStop}
-                disabled={busy}
-                className="inline-flex items-center gap-2 rounded-full glass-strong px-8 py-3.5 text-sm font-semibold text-foreground hover:glow-ring transition-all disabled:opacity-50"
-              >
+              <button onClick={handleStop} className="inline-flex items-center gap-2 rounded-full glass-strong px-8 py-3.5 text-sm font-semibold text-foreground hover:glow-ring transition-all">
                 <Square className="w-4 h-4" /> End session
               </button>
             )}
           </div>
 
-          {/* Partner presence */}
           {partner && (
             <div className="mt-16 glass rounded-2xl px-5 py-3 inline-flex items-center gap-3">
               <span className={`w-2 h-2 rounded-full ${partner.isLive ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
               <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
                 {partner.name} {partner.isLive ? "is focusing" : "is away"}
               </span>
-              <span className="text-xs font-mono tabular-nums text-foreground">
-                {formatHMS(partner.today)}
-              </span>
+              <span className="text-xs font-mono tabular-nums text-foreground">{formatHMS(partner.today)}</span>
             </div>
           )}
         </div>
@@ -249,7 +173,6 @@ function DashboardPage() {
     );
   }
 
-  // ── DASHBOARD ────────────────────────────────────────
   return (
     <div className="min-h-screen text-foreground relative overflow-x-hidden pb-20">
       <div className="absolute inset-0 bg-mesh opacity-40 pointer-events-none" />
@@ -258,15 +181,15 @@ function DashboardPage() {
       <header className="relative z-10 max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-3">
-          <Link to="/select" className="hidden sm:inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <Link to="/" className="hidden sm:inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
             Switch profile
           </Link>
           <button
-            onClick={() => { signOut(); navigate({ to: "/" }); }}
+            onClick={() => { clearCurrentSlot(); navigate({ to: "/" }); }}
             className="inline-flex items-center gap-2 rounded-full glass px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Sign out"
+            aria-label="Leave"
           >
-            <LogOut className="w-3.5 h-3.5" /> Sign out
+            <LogOut className="w-3.5 h-3.5" /> Leave
           </button>
         </div>
       </header>
@@ -281,25 +204,19 @@ function DashboardPage() {
           Your shared 8-hour ritual.
         </h1>
 
-        {/* Primary timer + goal ring */}
         <section className="mt-8 grid lg:grid-cols-[1.4fr_1fr] gap-5 animate-fade-up-blur" style={{ animationDelay: "120ms" }}>
           <TimerPanel
             active={active}
             elapsed={activeElapsed}
             label={label}
             setLabel={setLabel}
-            busy={busy}
             onStart={handleStart}
             onStop={handleStop}
             onFocus={() => setFocusMode(true)}
           />
-          <GoalRing
-            pct={combinedGoalPct}
-            combined={combinedToday}
-          />
+          <GoalRing pct={combinedGoalPct} combined={combinedToday} />
         </section>
 
-        {/* Stat strip */}
         <section className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3 animate-fade-up-blur" style={{ animationDelay: "180ms" }}>
           <Stat icon={Timer} label="My today" value={formatHMS(me?.today ?? 0)} sub={`goal ${formatHMS(DAILY_GOAL_SECONDS)}`} />
           <Stat icon={Activity} label="My week" value={formatHMS(me?.week ?? 0)} sub="combined sessions" />
@@ -307,7 +224,6 @@ function DashboardPage() {
           <Stat icon={Users} label="Together today" value={formatHMS(combinedToday)} sub={`${combinedGoalPct}% of 16h`} pulse />
         </section>
 
-        {/* Leaderboard */}
         <section className="mt-8 animate-fade-up-blur" style={{ animationDelay: "240ms" }}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-display font-semibold inline-flex items-center gap-2">
@@ -318,29 +234,26 @@ function DashboardPage() {
           <Leaderboard stats={slotStats} mySlot={mySlot} />
         </section>
 
-        {/* Recent sessions */}
         <section className="mt-8 animate-fade-up-blur" style={{ animationDelay: "300ms" }}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-display font-semibold inline-flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" /> Recent sessions
             </h2>
           </div>
-          <RecentSessions sessions={sessions} slots={slots} />
+          <RecentSessions sessions={sessions} />
         </section>
       </main>
     </div>
   );
 }
 
-/* ── Timer panel ─────────────────────────────────────── */
 function TimerPanel({
-  active, elapsed, label, setLabel, busy, onStart, onStop, onFocus,
+  active, elapsed, label, setLabel, onStart, onStop, onFocus,
 }: {
   active: StudySession | null;
   elapsed: number;
   label: string;
   setLabel: (s: string) => void;
-  busy: boolean;
   onStart: () => void;
   onStop: () => void;
   onFocus: () => void;
@@ -355,10 +268,7 @@ function TimerPanel({
           <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
           {active ? "Focusing" : "Idle"}
         </span>
-        <button
-          onClick={onFocus}
-          className="inline-flex items-center gap-1.5 rounded-full glass px-3 py-1.5 hover:text-foreground transition-colors"
-        >
+        <button onClick={onFocus} className="inline-flex items-center gap-1.5 rounded-full glass px-3 py-1.5 hover:text-foreground transition-colors">
           <Maximize2 className="w-3 h-3" /> Focus mode
         </button>
       </div>
@@ -379,20 +289,12 @@ function TimerPanel({
 
       <div className="relative mt-5 flex items-center gap-3">
         {!active ? (
-          <button
-            onClick={onStart}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform disabled:opacity-50"
-          >
+          <button onClick={onStart} className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground glow-ring hover:scale-[1.02] transition-transform">
             <Play className="w-4 h-4" /> Start session
           </button>
         ) : (
           <>
-            <button
-              onClick={onStop}
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-full glass-strong px-6 py-3 text-sm font-semibold text-foreground hover:glow-ring transition-all disabled:opacity-50"
-            >
+            <button onClick={onStop} className="inline-flex items-center gap-2 rounded-full glass-strong px-6 py-3 text-sm font-semibold text-foreground hover:glow-ring transition-all">
               <Square className="w-4 h-4" /> End session
             </button>
             <span className="text-xs text-muted-foreground font-mono">
@@ -405,7 +307,6 @@ function TimerPanel({
   );
 }
 
-/* ── Goal ring ───────────────────────────────────────── */
 function GoalRing({ pct, combined }: { pct: number; combined: number }) {
   const r = 78;
   const c = 2 * Math.PI * r;
@@ -416,8 +317,7 @@ function GoalRing({ pct, combined }: { pct: number; combined: number }) {
       <div className="relative w-44 h-44 mt-3">
         <svg viewBox="0 0 200 200" className="absolute inset-0 -rotate-90">
           <circle cx="100" cy="100" r={r} fill="none" stroke="color-mix(in oklab, var(--foreground) 10%, transparent)" strokeWidth="8" />
-          <circle
-            cx="100" cy="100" r={r} fill="none"
+          <circle cx="100" cy="100" r={r} fill="none"
             stroke="var(--primary)" strokeWidth="8" strokeLinecap="round"
             strokeDasharray={c} strokeDashoffset={dash}
             style={{ transition: "stroke-dashoffset 700ms cubic-bezier(0.16,1,0.3,1)" }}
@@ -435,7 +335,6 @@ function GoalRing({ pct, combined }: { pct: number; combined: number }) {
   );
 }
 
-/* ── Stat tile ───────────────────────────────────────── */
 function Stat({
   icon: Icon, label, value, sub, pulse,
 }: { icon: typeof Timer; label: string; value: string; sub: string; pulse?: boolean }) {
@@ -454,11 +353,8 @@ function Stat({
   );
 }
 
-/* ── Leaderboard ─────────────────────────────────────── */
-type SlotStat = {
-  name: SlotName; uid: string | null; today: number; week: number;
-  streak: number; isLive: boolean; slot: ProfileSlot | undefined;
-};
+type SlotStat = { name: SlotName; today: number; week: number; streak: number; isLive: boolean };
+
 function Leaderboard({ stats, mySlot }: { stats: SlotStat[]; mySlot: SlotName | null }) {
   const sorted = [...stats].sort((a, b) => b.week - a.week);
   const max = Math.max(1, ...sorted.map((s) => s.week));
@@ -504,9 +400,6 @@ function Leaderboard({ stats, mySlot }: { stats: SlotStat[]; mySlot: SlotName | 
                 style={{ width: `${pct}%`, boxShadow: "0 0 12px color-mix(in oklab, var(--primary) 50%, transparent)" }}
               />
             </div>
-            {!s.uid && (
-              <p className="mt-3 text-[11px] text-muted-foreground">Slot is empty. Invite them from /select.</p>
-            )}
           </div>
         );
       })}
@@ -514,12 +407,7 @@ function Leaderboard({ stats, mySlot }: { stats: SlotStat[]; mySlot: SlotName | 
   );
 }
 
-/* ── Recent sessions ─────────────────────────────────── */
-function RecentSessions({ sessions, slots }: { sessions: StudySession[]; slots: ProfileSlot[] }) {
-  const slotName = (uid: string): SlotName | "—" => {
-    const s = slots.find((x) => x.user_id === uid);
-    return (s?.slot as SlotName) ?? "—";
-  };
+function RecentSessions({ sessions }: { sessions: StudySession[] }) {
   const rows = sessions.slice(0, 8);
   if (rows.length === 0) {
     return (
@@ -537,7 +425,7 @@ function RecentSessions({ sessions, slots }: { sessions: StudySession[]; slots: 
         return (
           <div key={s.id} className="flex items-center gap-3 px-4 py-3">
             <span className={`w-1.5 h-1.5 rounded-full ${s.ended_at ? "bg-muted-foreground/40" : "bg-primary animate-pulse-glow"}`} />
-            <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground w-12">{slotName(s.user_id)}</span>
+            <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground w-12">{s.slot}</span>
             <span className="flex-1 text-sm text-foreground truncate">{s.label || (s.focus_mode ? "Focus session" : "Session")}</span>
             <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
               {new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
