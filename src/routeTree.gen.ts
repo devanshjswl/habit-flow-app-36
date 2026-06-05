@@ -9,33 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SelectRouteImport } from './routes/select'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SelectRoute = SelectRouteImport.update({
-  id: '/select',
-  path: '/select',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InsightsRoute = InsightsRouteImport.update({
-  id: '/insights',
-  path: '/insights',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -50,82 +26,31 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/insights': typeof InsightsRoute
-  '/login': typeof LoginRoute
-  '/select': typeof SelectRoute
-  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/insights': typeof InsightsRoute
-  '/login': typeof LoginRoute
-  '/select': typeof SelectRoute
-  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/insights': typeof InsightsRoute
-  '/login': typeof LoginRoute
-  '/select': typeof SelectRoute
-  '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/insights' | '/login' | '/select' | '/settings'
+  fullPaths: '/' | '/app'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/insights' | '/login' | '/select' | '/settings'
-  id:
-    | '__root__'
-    | '/'
-    | '/app'
-    | '/insights'
-    | '/login'
-    | '/select'
-    | '/settings'
+  to: '/' | '/app'
+  id: '__root__' | '/' | '/app'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
-  InsightsRoute: typeof InsightsRoute
-  LoginRoute: typeof LoginRoute
-  SelectRoute: typeof SelectRoute
-  SettingsRoute: typeof SettingsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/select': {
-      id: '/select'
-      path: '/select'
-      fullPath: '/select'
-      preLoaderRoute: typeof SelectRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/insights': {
-      id: '/insights'
-      path: '/insights'
-      fullPath: '/insights'
-      preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/app': {
       id: '/app'
       path: '/app'
@@ -146,10 +71,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
-  InsightsRoute: InsightsRoute,
-  LoginRoute: LoginRoute,
-  SelectRoute: SelectRoute,
-  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
