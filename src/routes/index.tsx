@@ -2,116 +2,129 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Particles } from "@/components/Particles";
-import { Logo } from "@/components/Logo";
-import { getLastVisitedMap, setCurrentSlot, type SlotName } from "@/lib/coop";
+import { setCurrentUser, useStudyData } from "@/hooks/use-study";
+import { USERS, USER_IDS, activeSession, formatHours, quoteOfTheDay, secondsIn, type UserId } from "@/lib/study";
+import { useSettings } from "@/hooks/use-settings";
 
 export const Route = createFileRoute("/")({
-  component: LandingPage,
+  component: ProfileSelect,
   head: () => ({
     meta: [
-      { title: "OSHUDEV — Choose your profile" },
-      { name: "description", content: "Pick DEV or OSHU and step into your shared focus space." },
+      { title: "Study Companion — Two people, one quiet focus" },
+      {
+        name: "description",
+        content: "A calm, shared study space for Dev and Oshu. Live timers, streaks, goals and gentle motivation.",
+      },
+      { property: "og:title", content: "Study Companion — Two people, one quiet focus" },
+      { property: "og:description", content: "A calm, shared study space with live timers, streaks and daily goals." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });
 
-function LandingPage() {
+function ProfileSelect() {
   const navigate = useNavigate();
-  const [lastVisited, setLastVisited] = useState<Partial<Record<SlotName, string>>>({});
+  const { profiles, sessions, now } = useStudyData();
+  useSettings();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  useEffect(() => { setLastVisited(getLastVisitedMap()); }, []);
-
-  const pick = (slot: SlotName) => {
-    setCurrentSlot(slot);
+  const enter = (id: UserId) => {
+    setCurrentUser(id);
     navigate({ to: "/app" });
   };
 
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   return (
     <div className="min-h-screen relative overflow-hidden flex flex-col">
-      <div className="absolute inset-0 bg-grid opacity-50 pointer-events-none" />
+      <div className="absolute inset-0 bg-grid opacity-40 pointer-events-none" />
       <div className="absolute inset-0 bg-mesh opacity-90 pointer-events-none" />
       <div
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] h-[720px] rounded-full pointer-events-none animate-float-orb"
-        style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--primary) 18%, transparent), transparent 60%)" }}
+        className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full pointer-events-none animate-float-orb"
+        style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--primary) 16%, transparent), transparent 62%)" }}
       />
-      <Particles count={32} />
+      <Particles count={26} />
 
-      <header className="relative z-10 max-w-6xl w-full mx-auto px-6 h-16 flex items-center">
-        <Logo />
-      </header>
-
-      <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-16">
-        <div className="w-full max-w-3xl">
+      <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-16">
+        <div className="w-full max-w-4xl">
           <div className="text-center animate-fade-up-blur">
-            <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-primary mb-4">PROFILE SELECT</p>
-            <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight gradient-text" style={{ lineHeight: 1.08 }}>
-              Who's stepping in?
+            <p className="text-[11px] font-mono uppercase tracking-[0.35em] text-primary mb-4">STUDY COMPANION</p>
+            <h1 className="text-4xl md:text-6xl font-display font-bold tracking-tight duo-gradient" style={{ lineHeight: 1.08 }}>
+              Who's studying?
             </h1>
+            <p className="mt-4 text-sm text-muted-foreground max-w-md mx-auto">
+              Two people, two goals, one quiet room. Pick your card and step in.
+            </p>
           </div>
 
-          <div className="mt-14 grid sm:grid-cols-2 gap-6">
-            {(["DEV", "OSHU"] as SlotName[]).map((name, i) => (
-              <ProfileCard key={name} name={name} lastVisited={lastVisited[name]} onPick={() => pick(name)} delay={i * 120} />
-            ))}
+          <div className="mt-12 grid sm:grid-cols-2 gap-6">
+            {USER_IDS.map((id, i) => {
+              const meta = USERS[id];
+              const p = profiles[id];
+              const live = mounted ? activeSession(sessions, id) : null;
+              const today = mounted ? secondsIn(sessions, id, todayStart.getTime(), now) : 0;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => enter(id)}
+                  className="group relative text-left animate-scale-fade"
+                  style={{ animationDelay: `${i * 130}ms` }}
+                >
+                  <div
+                    className="absolute -inset-1 rounded-[28px] opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500"
+                    style={{
+                      background: `radial-gradient(circle at 50% 50%, ${meta.hue === "blue" ? "var(--primary)" : "var(--accent-2)"}, transparent 70%)`,
+                    }}
+                  />
+                  <div className="relative glass-strong rounded-[28px] p-7 group-hover:glow-ring transition-all duration-500 overflow-hidden">
+                    <div
+                      className="absolute top-0 right-0 w-44 h-44 rounded-full -translate-y-14 translate-x-14 opacity-50"
+                      style={{
+                        background: `radial-gradient(circle, ${meta.hue === "blue" ? "var(--primary)" : "var(--accent-2)"}, transparent 62%)`,
+                      }}
+                    />
+                    <div className="relative flex items-start justify-between">
+                      <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center text-3xl animate-breathe">
+                        {p.avatar}
+                      </div>
+                      {live ? (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-3 py-1 text-[11px] font-medium text-success">
+                          <span className="w-1.5 h-1.5 rounded-full bg-success animate-live-dot" />
+                          Studying now
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-[11px] text-muted-foreground">
+                          Ready
+                        </span>
+                      )}
+                    </div>
+
+                    <h2 className="relative mt-6 text-4xl font-display font-bold tracking-tight">{p.name}</h2>
+                    <p className="relative mt-1.5 text-xs text-muted-foreground">{meta.goal}</p>
+
+                    <div className="relative mt-8 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {formatHours(today)}h today · goal {p.dailyGoalHours}h
+                      </span>
+                      <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                        Enter <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          <p className="mt-12 text-center text-xs text-muted-foreground font-mono tracking-widest">
-            A SPACE FOR TWO · OSHUDEV
+          <p className="mt-12 text-center text-sm text-muted-foreground/80 italic max-w-lg mx-auto">
+            "{quoteOfTheDay()}"
           </p>
         </div>
       </main>
     </div>
   );
-}
-
-function ProfileCard({
-  name, lastVisited, onPick, delay,
-}: { name: SlotName; lastVisited?: string; onPick: () => void; delay: number }) {
-  const accent = name === "DEV" ? "var(--primary)" : "color-mix(in oklab, var(--primary) 55%, white)";
-  return (
-    <button
-      type="button"
-      onClick={onPick}
-      className="group relative text-left animate-scale-fade"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="absolute -inset-1 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500"
-        style={{ background: `radial-gradient(circle at 50% 50%, ${accent}, transparent 70%)` }} />
-
-      <div className="relative glass-strong rounded-3xl p-7 hover:glow-ring transition-all duration-500 overflow-hidden">
-        <div className="absolute top-0 right-0 w-40 h-40 rounded-full -translate-y-12 translate-x-12 opacity-50 group-hover:opacity-80 transition-opacity"
-          style={{ background: `radial-gradient(circle, ${accent}, transparent 60%)` }} />
-
-        <div className="relative flex items-start justify-between">
-          <div>
-            <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-muted-foreground">PROFILE</p>
-            <h2 className="mt-2 text-5xl font-display font-bold tracking-tight">{name}</h2>
-          </div>
-          <span className="inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-[11px] font-mono uppercase tracking-widest">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-glow" />
-            Ready
-          </span>
-        </div>
-
-        <div className="relative mt-10 flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            {lastVisited ? <>Last seen <span className="text-foreground/80">{relTime(lastVisited)}</span></> : "Never visited yet"}
-          </div>
-          <div className="inline-flex items-center gap-2 text-sm font-medium text-primary">
-            Enter as {name} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function relTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
