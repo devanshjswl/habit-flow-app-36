@@ -8,6 +8,21 @@ import {
 import { getFirebaseConfig } from "./firebase-config.functions";
 
 let dbPromise: Promise<Firestore> | null = null;
+let appPromise: Promise<FirebaseApp> | null = null;
+
+/** Lazily boot the Firebase app in the browser. */
+export function getFirebaseApp(): Promise<FirebaseApp> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Firebase is browser-only"));
+  }
+  if (!appPromise) {
+    appPromise = (async () => {
+      const config = await getFirebaseConfig();
+      return getApps().length ? getApps()[0] : initializeApp(config);
+    })();
+  }
+  return appPromise;
+}
 
 /** Lazily boot Firebase in the browser with offline persistence enabled. */
 export function getDb(): Promise<Firestore> {
