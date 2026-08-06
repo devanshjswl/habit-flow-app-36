@@ -31,8 +31,7 @@ export function getDb(): Promise<Firestore> {
   }
   if (!dbPromise) {
     dbPromise = (async () => {
-      const config = await getFirebaseConfig();
-      const app: FirebaseApp = getApps().length ? getApps()[0] : initializeApp(config);
+      const app = await getFirebaseApp();
       return initializeFirestore(app, {
         localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
       });
