@@ -81,12 +81,25 @@ function Dashboard() {
               Hey {me.name.split(" ")[0]}, <span className="duo-gradient">let's build today.</span>
             </h1>
           </div>
-          <div className="rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground">
-            {USERS[otherId].defaultName} is {sessions.some((s) => s.uid === otherId && !s.endedAt) ? (
-              <span className="text-success font-medium">studying right now</span>
-            ) : (
-              "not studying yet"
-            )}
+          <div className="flex items-center gap-3">
+            <Link
+              to="/notes"
+              className="relative inline-flex items-center gap-2 rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <MessageSquare className="w-3.5 h-3.5" /> Notes
+              {unreadNotes > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {unreadNotes > 9 ? "9+" : unreadNotes}
+                </span>
+              )}
+            </Link>
+            <div className="rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground">
+              {USERS[otherId].defaultName} is {sessions.some((s) => s.uid === otherId && !s.endedAt) ? (
+                <span className="text-success font-medium">studying right now</span>
+              ) : (
+                "not studying yet"
+              )}
+            </div>
           </div>
         </header>
 
