@@ -1,10 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, CalendarDays, Trophy, Settings, LogOut } from "lucide-react";
-import { clearCurrentUser } from "@/hooks/use-study";
+import { LayoutDashboard, CalendarDays, Trophy, Settings, LogOut, MessageSquare } from "lucide-react";
+import { clearCurrentUser, useCurrentUser } from "@/hooks/use-study";
+import { useUnreadNotes } from "@/hooks/use-notes";
 import { useNavigate } from "@tanstack/react-router";
 
 const ITEMS = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/notes", label: "Notes", icon: MessageSquare },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/achievements", label: "Awards", icon: Trophy },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -13,11 +15,14 @@ const ITEMS = [
 export function AppNav({ name, avatar }: { name: string; avatar: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const { uid } = useCurrentUser();
+  const unread = useUnreadNotes(uid);
 
   const leave = () => {
     clearCurrentUser();
     navigate({ to: "/" });
   };
+
 
   return (
     <>
