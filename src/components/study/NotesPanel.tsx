@@ -11,11 +11,13 @@ export function NotesPanel({
   uid,
   profiles,
   limit,
+  autoMarkSeen = true,
   className = "",
 }: {
   uid: UserId;
   profiles: Record<UserId, Profile>;
   limit?: number;
+  autoMarkSeen?: boolean;
   className?: string;
 }) {
   const { notes, error } = useNotes();
@@ -32,12 +34,13 @@ export function NotesPanel({
 
   useEffect(() => {
     setSeenAt(getLastSeen());
-    markNotesSeen();
-  }, [uid]);
+    if (autoMarkSeen) markNotesSeen();
+  }, [uid, autoMarkSeen]);
 
   useEffect(() => {
-    if (notes.length) markNotesSeen();
-  }, [notes.length]);
+    if (autoMarkSeen && notes.length) markNotesSeen();
+  }, [autoMarkSeen, notes.length]);
+
 
   useEffect(() => {
     if (!file) {
