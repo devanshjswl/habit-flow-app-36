@@ -1,10 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, CalendarDays, Trophy, Settings, LogOut } from "lucide-react";
-import { clearCurrentUser } from "@/hooks/use-study";
+import { LayoutDashboard, CalendarDays, Trophy, Settings, LogOut, MessageSquare } from "lucide-react";
+import { clearCurrentUser, useCurrentUser } from "@/hooks/use-study";
+import { useUnreadNotes } from "@/hooks/use-notes";
 import { useNavigate } from "@tanstack/react-router";
 
 const ITEMS = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/notes", label: "Notes", icon: MessageSquare },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/achievements", label: "Awards", icon: Trophy },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -13,11 +15,14 @@ const ITEMS = [
 export function AppNav({ name, avatar }: { name: string; avatar: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const { uid } = useCurrentUser();
+  const unread = useUnreadNotes(uid);
 
   const leave = () => {
     clearCurrentUser();
     navigate({ to: "/" });
   };
+
 
   return (
     <>
@@ -38,6 +43,11 @@ export function AppNav({ name, avatar }: { name: string; avatar: string }) {
               }`}
             >
               <Icon className="w-[18px] h-[18px]" />
+              {to === "/notes" && unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
               <span className="pointer-events-none absolute left-14 whitespace-nowrap rounded-lg glass-strong px-2.5 py-1 text-xs opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0">
                 {label}
               </span>
@@ -63,11 +73,16 @@ export function AppNav({ name, avatar }: { name: string; avatar: string }) {
               <Link
                 key={to}
                 to={to}
-                className={`flex flex-col items-center gap-1 px-3 py-2 min-w-[64px] transition-colors ${
+                className={`relative flex flex-col items-center gap-1 px-3 py-2 min-w-[64px] transition-colors ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="w-5 h-5" />
+                {to === "/notes" && unread > 0 && (
+                  <span className="absolute top-1 right-2 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
                 <span className="text-[10px] font-medium">{label}</span>
               </Link>
             );
