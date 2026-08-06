@@ -73,11 +73,16 @@ export function AppNav({ name, avatar }: { name: string; avatar: string }) {
               <Link
                 key={to}
                 to={to}
-                className={`flex flex-col items-center gap-1 px-3 py-2 min-w-[64px] transition-colors ${
+                className={`relative flex flex-col items-center gap-1 px-3 py-2 min-w-[64px] transition-colors ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="w-5 h-5" />
+                {to === "/notes" && unread > 0 && (
+                  <span className="absolute top-1 right-2 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
                 <span className="text-[10px] font-medium">{label}</span>
               </Link>
             );
