@@ -1,13 +1,15 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import { Sparkles, Users, Target, TrendingUp } from "lucide-react";
+import { Sparkles, Users, Target, TrendingUp, MessageSquare } from "lucide-react";
 import { AppNav } from "@/components/study/AppNav";
 import { StudyCard } from "@/components/study/StudyCard";
 import { Pomodoro } from "@/components/study/Pomodoro";
+import { NotesPanel } from "@/components/study/NotesPanel";
 import { Heatmap } from "@/components/study/Heatmap";
 import { Ring } from "@/components/study/Ring";
 import { useCurrentUser, useStudyActions, useStudyData } from "@/hooks/use-study";
 import { useSettings } from "@/hooks/use-settings";
+import { useUnreadNotes } from "@/hooks/use-notes";
 import {
   USERS,
   USER_IDS,
@@ -41,6 +43,7 @@ function Dashboard() {
   const { profiles, sessions, now, error } = useStudyData();
   const { saveProfile, startSession, stopSession } = useStudyActions(uid);
   const { settings } = useSettings();
+  const unreadNotes = useUnreadNotes(uid);
 
   useEffect(() => {
     if (hydrated && !uid) navigate({ to: "/" });
@@ -80,12 +83,25 @@ function Dashboard() {
               Hey {me.name.split(" ")[0]}, <span className="duo-gradient">let's build today.</span>
             </h1>
           </div>
-          <div className="rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground">
-            {USERS[otherId].defaultName} is {sessions.some((s) => s.uid === otherId && !s.endedAt) ? (
-              <span className="text-success font-medium">studying right now</span>
-            ) : (
-              "not studying yet"
-            )}
+          <div className="flex items-center gap-3">
+            <Link
+              to="/notes"
+              className="relative inline-flex items-center gap-2 rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <MessageSquare className="w-3.5 h-3.5" /> Notes
+              {unreadNotes > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {unreadNotes > 9 ? "9+" : unreadNotes}
+                </span>
+              )}
+            </Link>
+            <div className="rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground">
+              {USERS[otherId].defaultName} is {sessions.some((s) => s.uid === otherId && !s.endedAt) ? (
+                <span className="text-success font-medium">studying right now</span>
+              ) : (
+                "not studying yet"
+              )}
+            </div>
           </div>
         </header>
 
@@ -158,7 +174,9 @@ function Dashboard() {
         </section>
 
         <section className="grid lg:grid-cols-2 gap-6">
+          <NotesPanel uid={uid} profiles={profiles} limit={4} autoMarkSeen={false} />
           <Pomodoro sounds={settings.sounds} notifications={settings.notifications} />
+
 
           <div className="space-y-6">
             <div className="glass rounded-3xl p-6">
