@@ -4,6 +4,7 @@ import { Sparkles, Users, Target, TrendingUp } from "lucide-react";
 import { AppNav } from "@/components/study/AppNav";
 import { StudyCard } from "@/components/study/StudyCard";
 import { Pomodoro } from "@/components/study/Pomodoro";
+import { NotesPanel } from "@/components/study/NotesPanel";
 import { Heatmap } from "@/components/study/Heatmap";
 import { Ring } from "@/components/study/Ring";
 import { useCurrentUser, useStudyActions, useStudyData } from "@/hooks/use-study";
