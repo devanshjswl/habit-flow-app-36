@@ -104,9 +104,22 @@ export function NotesPanel({
             </span>
           )}
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          {unread > 0 ? `${unread} unread from ${other}` : "All caught up"}
-        </span>
+        {unread > 0 && !autoMarkSeen ? (
+          <button
+            type="button"
+            onClick={() => {
+              markNotesSeen();
+              setSeenAt(Date.now());
+            }}
+            className="text-[11px] text-primary hover:underline"
+          >
+            Mark {unread} from {other} as read
+          </button>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            {unread > 0 ? `${unread} unread from ${other}` : "All caught up"}
+          </span>
+        )}
       </div>
 
       {error && <p className="mb-3 text-xs text-destructive">Sync issue: {error}</p>}
