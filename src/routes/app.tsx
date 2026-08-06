@@ -158,7 +158,9 @@ function Dashboard() {
         </section>
 
         <section className="grid lg:grid-cols-2 gap-6">
+          <NotesPanel uid={uid} profiles={profiles} limit={4} autoMarkSeen={false} />
           <Pomodoro sounds={settings.sounds} notifications={settings.notifications} />
+
 
           <div className="space-y-6">
             <div className="glass rounded-3xl p-6">
