@@ -1,6 +1,6 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import { Sparkles, Users, Target, TrendingUp } from "lucide-react";
+import { Sparkles, Users, Target, TrendingUp, MessageSquare } from "lucide-react";
 import { AppNav } from "@/components/study/AppNav";
 import { StudyCard } from "@/components/study/StudyCard";
 import { Pomodoro } from "@/components/study/Pomodoro";
@@ -9,6 +9,7 @@ import { Heatmap } from "@/components/study/Heatmap";
 import { Ring } from "@/components/study/Ring";
 import { useCurrentUser, useStudyActions, useStudyData } from "@/hooks/use-study";
 import { useSettings } from "@/hooks/use-settings";
+import { useUnreadNotes } from "@/hooks/use-notes";
 import {
   USERS,
   USER_IDS,
@@ -42,6 +43,7 @@ function Dashboard() {
   const { profiles, sessions, now, error } = useStudyData();
   const { saveProfile, startSession, stopSession } = useStudyActions(uid);
   const { settings } = useSettings();
+  const unreadNotes = useUnreadNotes(uid);
 
   useEffect(() => {
     if (hydrated && !uid) navigate({ to: "/" });
