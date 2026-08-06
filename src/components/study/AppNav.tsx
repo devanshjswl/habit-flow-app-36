@@ -43,6 +43,11 @@ export function AppNav({ name, avatar }: { name: string; avatar: string }) {
               }`}
             >
               <Icon className="w-[18px] h-[18px]" />
+              {to === "/notes" && unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
               <span className="pointer-events-none absolute left-14 whitespace-nowrap rounded-lg glass-strong px-2.5 py-1 text-xs opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0">
                 {label}
               </span>
