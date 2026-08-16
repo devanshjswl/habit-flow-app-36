@@ -56,6 +56,7 @@ export interface Session {
   endedAt: number | null;
   seconds: number;
   date: string; // YYYY-MM-DD
+  manual?: boolean;
 }
 
 export const MOODS = ["🙂", "🔥", "😴", "😤", "🧠", "😌", "😵‍💫", "💪", "☕", "🌙"];

@@ -5,6 +5,8 @@ import { AppNav } from "@/components/study/AppNav";
 import { StudyCard } from "@/components/study/StudyCard";
 import { Pomodoro } from "@/components/study/Pomodoro";
 import { NotesPanel } from "@/components/study/NotesPanel";
+import { TimeAdjuster } from "@/components/study/TimeAdjuster";
+import { WeeklyTotals } from "@/components/study/WeeklyTotals";
 import { Heatmap } from "@/components/study/Heatmap";
 import { Ring } from "@/components/study/Ring";
 import { useCurrentUser, useStudyActions, useStudyData } from "@/hooks/use-study";
@@ -41,7 +43,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const { uid, hydrated } = useCurrentUser();
   const { profiles, sessions, now, error } = useStudyData();
-  const { saveProfile, startSession, stopSession } = useStudyActions(uid);
+  const { saveProfile, startSession, stopSession, adjustTime, removeSessions } = useStudyActions(uid);
   const { settings } = useSettings();
   const unreadNotes = useUnreadNotes(uid);
 
@@ -172,6 +174,10 @@ function Dashboard() {
             </div>
           </div>
         </section>
+
+        <WeeklyTotals profiles={profiles} sessions={sessions} now={now} me={uid} />
+
+        <TimeAdjuster uid={uid} sessions={sessions} now={now} onAdjust={adjustTime} onRemove={removeSessions} />
 
         <section className="grid lg:grid-cols-2 gap-6">
           <NotesPanel uid={uid} profiles={profiles} limit={4} autoMarkSeen={false} />
