@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Send, ImagePlus, X, Trash2, MessageSquare, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useNoteActions, useNotes, markNotesSeen, getLastSeen, type Note } from "@/hooks/use-notes";
+import { useNoteActions, useNotes, markNotesSeen, useLastSeen, type Note } from "@/hooks/use-notes";
 import { compressMedia, formatBytes } from "@/lib/compress";
 import { USERS, type Profile, type UserId } from "@/lib/study";
 
@@ -30,15 +30,11 @@ export function NotesPanel({
   const [preview, setPreview] = useState<string | null>(null);
   const [working, setWorking] = useState<null | "compressing" | "sending">(null);
   const [progress, setProgress] = useState(0);
-  const [seenAt, setSeenAt] = useState(0);
+  const seenAt = useLastSeen();
+  const [entryAt] = useState(() => Date.now());
 
   useEffect(() => {
-    setSeenAt(getLastSeen());
     if (autoMarkSeen) markNotesSeen();
-  }, [uid, autoMarkSeen]);
-
-  useEffect(() => {
-    if (autoMarkSeen && notes.length) markNotesSeen();
   }, [autoMarkSeen, notes.length]);
 
 
@@ -89,7 +85,8 @@ export function NotesPanel({
     }
   };
 
-  const unread = notes.filter((n) => n.uid !== uid && n.createdAt > seenAt).length;
+  const markBefore = autoMarkSeen ? entryAt : seenAt;
+  const unread = notes.filter((n) => n.uid !== uid && n.createdAt > markBefore).length;
   const shown = limit ? notes.slice(0, limit) : notes;
   const other = USERS[uid === "dev" ? "oshu" : "dev"].defaultName;
 
@@ -104,21 +101,16 @@ export function NotesPanel({
             </span>
           )}
         </div>
-        {unread > 0 && !autoMarkSeen ? (
+        {unread > 0 ? (
           <button
             type="button"
-            onClick={() => {
-              markNotesSeen();
-              setSeenAt(Date.now());
-            }}
+            onClick={() => markNotesSeen()}
             className="text-[11px] text-primary hover:underline"
           >
             Mark {unread} from {other} as read
           </button>
         ) : (
-          <span className="text-[11px] text-muted-foreground">
-            {unread > 0 ? `${unread} unread from ${other}` : "All caught up"}
-          </span>
+          <span className="text-[11px] text-muted-foreground">All caught up</span>
         )}
       </div>
 
@@ -204,7 +196,7 @@ export function NotesPanel({
               key={n.id}
               note={n}
               mine={n.uid === uid}
-              unread={n.uid !== uid && n.createdAt > seenAt}
+              unread={n.uid !== uid && n.createdAt > markBefore}
               name={profiles[n.uid]?.name ?? USERS[n.uid].defaultName}
               avatar={profiles[n.uid]?.avatar ?? "🙂"}
               onDelete={() => remove(n)}
