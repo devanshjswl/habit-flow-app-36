@@ -114,10 +114,14 @@ export function secondsIn(sessions: Session[], uid: UserId | null, since: number
   let total = 0;
   for (const s of sessions) {
     if (uid && s.uid !== uid) continue;
-    const end = s.endedAt ?? now;
+    if (s.endedAt !== null) {
+      // Finished or manually adjusted entries carry their own duration (can be negative).
+      if (s.endedAt >= since) total += s.seconds;
+      continue;
+    }
     const begin = Math.max(since, s.startedAt);
-    if (end <= begin) continue;
-    total += Math.floor((end - begin) / 1000);
+    if (now <= begin) continue;
+    total += Math.floor((now - begin) / 1000);
   }
   return total;
 }
