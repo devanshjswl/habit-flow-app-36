@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   collection,
   addDoc,
@@ -31,52 +31,14 @@ export function getLastSeen(): number {
   return Number(localStorage.getItem(SEEN_KEY) ?? 0);
 }
 
-export function markNotesSeen() {
-  localStorage.setItem(SEEN_KEY, String(Date.now()));
+export function markNotesSeen(at = Date.now()) {
+  localStorage.setItem(SEEN_KEY, String(at));
   window.dispatchEvent(new Event(SEEN_EVENT));
 }
 
-/** Realtime feed of the shared note board. */
-export function useNotes() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let unsub: (() => void) | undefined;
-
-    (async () => {
-      try {
-        const db = await getDb();
-        if (cancelled) return;
-        unsub = onSnapshot(
-          query(collection(db, "notes"), orderBy("createdAt", "desc"), limit(200)),
-          (snap) => {
-            setNotes(snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as Note));
-            setReady(true);
-          },
-          (e) => setError(e.message),
-        );
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, []);
-
-  return useMemo(() => ({ notes, error, ready }), [notes, error, ready]);
-}
-
-/** Count of notes from the other person newer than the last time this device opened the board. */
-export function useUnreadNotes(uid: UserId | null) {
-  const { notes } = useNotes();
+/** Reactive last-seen timestamp shared by every badge on the page. */
+export function useLastSeen(): number {
   const [seen, setSeen] = useState(0);
-
   useEffect(() => {
     const sync = () => setSeen(getLastSeen());
     sync();
@@ -87,8 +49,78 @@ export function useUnreadNotes(uid: UserId | null) {
       window.removeEventListener("storage", sync);
     };
   }, []);
+  return seen;
+}
 
-  return notes.filter((n) => n.uid !== uid && n.createdAt > seen).length;
+/* ------------------------------------------------------------------ */
+/* Single shared realtime subscription so every badge stays in sync.   */
+/* ------------------------------------------------------------------ */
+
+interface NotesState {
+  notes: Note[];
+  error: string | null;
+  ready: boolean;
+}
+
+let state: NotesState = { notes: [], error: null, ready: false };
+const listeners = new Set<() => void>();
+let unsubscribe: (() => void) | null = null;
+let starting = false;
+
+function emit(next: Partial<NotesState>) {
+  state = { ...state, ...next };
+  listeners.forEach((l) => l());
+}
+
+function start() {
+  if (unsubscribe || starting || typeof window === "undefined") return;
+  starting = true;
+  (async () => {
+    try {
+      const db = await getDb();
+      unsubscribe = onSnapshot(
+        query(collection(db, "notes"), orderBy("createdAt", "desc"), limit(200)),
+        (snap) => {
+          emit({
+            notes: snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as Note),
+            ready: true,
+            error: null,
+          });
+        },
+        (e) => emit({ error: e.message }),
+      );
+    } catch (e) {
+      emit({ error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      starting = false;
+    }
+  })();
+}
+
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  start();
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+const serverSnapshot: NotesState = { notes: [], error: null, ready: false };
+
+/** Realtime feed of the shared note board. */
+export function useNotes() {
+  return useSyncExternalStore(
+    subscribe,
+    () => state,
+    () => serverSnapshot,
+  );
+}
+
+/** Count of notes from the other person newer than the last time this device opened the board. */
+export function useUnreadNotes(uid: UserId | null) {
+  const { notes } = useNotes();
+  const seen = useLastSeen();
+  return useMemo(() => notes.filter((n) => n.uid !== uid && n.createdAt > seen).length, [notes, uid, seen]);
 }
 
 export function useNoteActions(uid: UserId | null) {

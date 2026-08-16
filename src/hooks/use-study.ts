@@ -4,6 +4,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   setDoc,
   onSnapshot,
   query,
@@ -153,7 +154,32 @@ export function useStudyActions(uid: UserId | null) {
     });
   }, []);
 
-  return { saveProfile, startSession, stopSession };
+  /** Manually add (positive) or deduct (negative) study minutes. */
+  const adjustTime = useCallback(async (subject: string, minutes: number, when = new Date()) => {
+    const id = uidRef.current;
+    if (!id || !minutes) return;
+    const db = await getDb();
+    const seconds = Math.round(minutes * 60);
+    const endedAt = when.getTime();
+    await addDoc(collection(db, "sessions"), {
+      uid: id,
+      subject,
+      startedAt: endedAt - Math.max(0, seconds) * 1000,
+      endedAt,
+      seconds,
+      date: dateKey(when),
+      manual: true,
+    });
+  }, []);
+
+  /** Delete a set of sessions (used by the reset controls). */
+  const removeSessions = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const db = await getDb();
+    await Promise.all(ids.map((sid) => deleteDoc(doc(db, "sessions", sid))));
+  }, []);
+
+  return { saveProfile, startSession, stopSession, adjustTime, removeSessions };
 }
 
 /** Reads the locally selected profile once the component is hydrated. */
