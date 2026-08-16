@@ -11,7 +11,7 @@ import { Heatmap } from "@/components/study/Heatmap";
 import { Ring } from "@/components/study/Ring";
 import { useCurrentUser, useStudyActions, useStudyData } from "@/hooks/use-study";
 import { useSettings } from "@/hooks/use-settings";
-import { useUnreadNotes } from "@/hooks/use-notes";
+import { markNotesSeen, useUnreadNotes } from "@/hooks/use-notes";
 import {
   USERS,
   USER_IDS,
@@ -97,6 +97,15 @@ function Dashboard() {
                 </span>
               )}
             </Link>
+            {unreadNotes > 0 && (
+              <button
+                type="button"
+                onClick={() => markNotesSeen()}
+                className="rounded-2xl glass px-4 py-2.5 text-xs text-primary hover:opacity-80 transition-opacity"
+              >
+                Mark as read
+              </button>
+            )}
             <div className="rounded-2xl glass px-4 py-2.5 text-xs text-muted-foreground">
               {USERS[otherId].defaultName} is {sessions.some((s) => s.uid === otherId && !s.endedAt) ? (
                 <span className="text-success font-medium">studying right now</span>
@@ -169,7 +178,6 @@ function Dashboard() {
             </div>
             <div className="mt-5 grid grid-cols-3 gap-3">
               <MiniStat label="Total hours" value={`${formatHours(totalSec)}h`} />
-              <MiniStat label="Sessions" value={String(sessions.length)} />
               <MiniStat label="Shared streak" value={`${sharedStreak}d`} />
             </div>
           </div>

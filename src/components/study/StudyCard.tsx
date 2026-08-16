@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play, Square, Flame, Clock } from "lucide-react";
+import { Play, Square, Pause, Flame, Clock } from "lucide-react";
 import { Ring } from "./Ring";
 import {
   USERS,
@@ -98,7 +98,6 @@ export function StudyCard({ uid, profile, sessions, now, isMe, onStart, onStop, 
           <Stat icon={<Clock className="w-3.5 h-3.5" />} label="Today" value={`${formatHours(todaySec)}h`} />
           <Stat icon={<Clock className="w-3.5 h-3.5" />} label="This week" value={`${formatHours(weekSec)}h`} />
           <Stat icon={<Flame className="w-3.5 h-3.5" />} label="Streak" value={`${streak}d`} />
-          <Stat icon={<Clock className="w-3.5 h-3.5" />} label="Sessions" value={String(sessions.filter((s) => s.uid === uid).length)} />
         </div>
       </div>
 
@@ -136,13 +135,26 @@ export function StudyCard({ uid, profile, sessions, now, isMe, onStart, onStop, 
               ))}
             </select>
             {active ? (
-              <button
-                type="button"
-                onClick={() => onStop?.(active)}
-                className="inline-flex items-center gap-2 rounded-xl bg-destructive text-destructive-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
-              >
-                <Square className="w-4 h-4" /> Stop
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubject(active.subject);
+                    onStop?.(active);
+                  }}
+                  title="Pause — banks the time, resume with Start"
+                  className="inline-flex items-center gap-2 rounded-xl glass-soft px-4 h-11 text-sm font-semibold hover:text-foreground transition-colors"
+                >
+                  <Pause className="w-4 h-4" /> Pause
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onStop?.(active)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-destructive text-destructive-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
+                >
+                  <Square className="w-4 h-4" /> Stop
+                </button>
+              </>
             ) : (
               <button
                 type="button"
